@@ -1,8 +1,9 @@
 {
-  "name": "claude-marketplace",
-  "displayName": "BusinessBuilders Claude Marketplace",
-  "description": "Personal Claude Code plugin marketplace featuring tool-advisor with auto-optimize skill for automated project analysis and agent orchestration",
+  "name": "businessbuilders-marketplace",
+  "displayName": "BusinessBuilders Marketplace",
+  "description": "Personal plugin marketplace featuring tool-advisor with auto-optimize skill for automated project analysis and agent orchestration",
   "version": "1.0.0",
+  "owner": "BusinessBuilders",
   "author": {
     "name": "BusinessBuilders",
     "email": "donovan@business-builder.online"
@@ -11,7 +12,7 @@
   "plugins": [
     {
       "name": "tool-advisor",
-      "path": "plugins/tool-advisor",
+      "source": "plugins/tool-advisor",
       "description": "Intelligently analyze installed plugins, skills, and agents to recommend the best tools for any project or task",
       "version": "0.1.0"
     }
