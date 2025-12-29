@@ -17,7 +17,7 @@
       "name": "tool-advisor",
       "source": "github:BusinessBuilders/tool-advisor",
       "description": "Intelligently analyze installed plugins, skills, and agents to recommend the best tools for any project or task",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
