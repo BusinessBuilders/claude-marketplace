@@ -29,7 +29,7 @@ Intelligently analyze installed plugins, skills, and agents to recommend the bes
 Add this marketplace to Claude Code:
 
 ```
-/plugin marketplace add yourusername/claude-marketplace
+/plugin marketplace add BusinessBuilders/claude-marketplace
 ```
 
 Then install plugins:
