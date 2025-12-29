@@ -1,0 +1,47 @@
+{
+  "description": "Tool Advisor proactive hooks for intelligent capability suggestions",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before executing this tool, quickly check if there's a more specialized tool available.\n\n## Quick Check\n\n1. What task is this tool doing?\n2. Load ~/.claude/tool-advisor-cache.json (skip if missing)\n3. Is there a better specialized tool (>85% match)?\n\n## Response\n\n**If better tool exists**:\n```\n💡 Better tool: ${toolName}\n${reason}\n\nProceed or switch?\n```\n\n**Otherwise**: Silent (let tool proceed)\n\nBe fast - only suggest if significantly better."
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "After tool execution, check if it failed and suggest alternatives.\n\n## Check\n\n1. Did tool fail?\n2. Are there alternatives in cache?\n\n## Response\n\n**If failed**:\n```\n⚠️ Try these instead:\n- ${tool1}\n- ${tool2}\n```\n\n**If succeeded**: Silent"
+          }
+        ],
+        "matcher": ".*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/build-index.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if user's message indicates they need a specialized tool.\n\n## Detect\n\n- Task keywords: deploy, test, review, debug, build\n- Questions: \"How do I...\", \"Can you help...\"\n- Errors: stack traces, \"not working\"\n\n## Response\n\n**If strong match (>90%)**:\n```\n💡 Using ${toolName}\n\n${continueWithResponse}\n```\n\n**If good match (80-90%)**:\n```\n💡 ${toolName} available\n\n${continueWithResponse}\n```\n\n**Otherwise**: Normal response\n\nRules:\n- Load ~/.claude/tool-advisor-cache.json\n- Skip if cache missing/stale\n- Min confidence: 80%\n- Max one suggestion\n- Be brief and inline"
+          }
+        ]
+      }
+    ]
+  }
+}

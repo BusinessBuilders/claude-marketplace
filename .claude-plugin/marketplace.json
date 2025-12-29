@@ -15,7 +15,7 @@
   "plugins": [
     {
       "name": "tool-advisor",
-      "source": "https://github.com/BusinessBuilders/tool-advisor",
+      "source": "./plugins/tool-advisor",
       "description": "Intelligently analyze installed plugins, skills, and agents to recommend the best tools for any project or task",
       "version": "0.2.0"
     }

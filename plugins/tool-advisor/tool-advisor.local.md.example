@@ -1,0 +1,97 @@
+# Tool Advisor Settings
+
+Copy this file to `.claude/tool-advisor.local.md` and customize as needed.
+
+```yaml
+# Enable/disable proactive suggestions during conversations
+# When enabled, tool-advisor will suggest relevant tools as you work
+proactive_suggestions: true
+
+# Auto-use threshold (0.0 - 1.0)
+# If confidence score exceeds this, automatically use the tool
+# Set to 1.0 to disable auto-use
+auto_use_threshold: 0.90
+
+# Suggestion threshold (0.0 - 1.0)
+# Show suggestions when confidence exceeds this value
+suggestion_threshold: 0.70
+
+# Scan tools when starting a new conversation
+scan_on_start: true
+
+# How often to scan for new/updated tools
+# Options: hourly, daily, manual
+scan_frequency: hourly
+
+# Directories to scan for tools
+# Add or remove paths as needed
+scan_directories:
+  - ~/.claude/plugins/
+  - ~/.claude/skills/
+  - ./.claude/
+
+# Output verbosity
+# Options: quiet, normal, verbose
+verbosity: normal
+
+# Show match percentages in recommendations
+# When true, displays confidence scores like "terraform-specialist (94% match)"
+show_scores: true
+
+# Exclude plugins matching these glob patterns
+# Useful for ignoring deprecated or experimental plugins
+exclude_plugins:
+  - "legacy-*"
+  - "deprecated-*"
+  - "experimental-*"
+
+# Preferred tools for specific task types
+# Format: task_keyword: "preferred-plugin-name"
+preferred_tools:
+  deploy: "cloud-infrastructure"
+  review: "code-review-ai"
+  test: "tdd-workflows"
+  debug: "debugging-toolkit"
+  security: "security-scanning"
+```
+
+## Usage Notes
+
+- **proactive_suggestions**: Disable this if you find suggestions distracting
+- **auto_use_threshold**: Set high (0.95+) for conservative auto-use, lower (0.80) for aggressive
+- **scan_frequency**: Use "manual" if you have many plugins and want to control scan timing
+- **exclude_plugins**: Add patterns for plugins you never want recommended
+- **preferred_tools**: Override ranking algorithm for specific task types
+
+## Examples
+
+### Conservative Setup (Manual Control)
+```yaml
+proactive_suggestions: false
+auto_use_threshold: 1.0  # Never auto-use
+suggestion_threshold: 0.85
+scan_frequency: manual
+verbosity: quiet
+```
+
+### Aggressive Setup (Maximum Automation)
+```yaml
+proactive_suggestions: true
+auto_use_threshold: 0.75
+suggestion_threshold: 0.60
+scan_on_start: true
+scan_frequency: hourly
+verbosity: verbose
+show_scores: true
+```
+
+### Balanced Setup (Recommended)
+```yaml
+proactive_suggestions: true
+auto_use_threshold: 0.90
+suggestion_threshold: 0.70
+scan_on_start: true
+scan_frequency: hourly
+verbosity: normal
+show_scores: true
+```
