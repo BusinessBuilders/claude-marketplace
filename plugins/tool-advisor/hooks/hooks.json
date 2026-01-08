@@ -1,44 +1,62 @@
 {
-  "description": "Tool Advisor proactive hooks for intelligent capability suggestions",
+  "description": "Tool Advisor: intelligent capability suggestions with cascade behavior",
   "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before executing this tool, quickly check if there's a more specialized tool available.\n\n## Quick Check\n\n1. What task is this tool doing?\n2. Load ~/.claude/tool-advisor-cache.json (skip if missing)\n3. Is there a better specialized tool (>85% match)?\n\n## Response\n\n**If better tool exists**:\n```\n💡 Better tool: ${toolName}\n${reason}\n\nProceed or switch?\n```\n\n**Otherwise**: Silent (let tool proceed)\n\nBe fast - only suggest if significantly better."
-          }
-        ],
-        "matcher": ".*"
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "After tool execution, check if it failed and suggest alternatives.\n\n## Check\n\n1. Did tool fail?\n2. Are there alternatives in cache?\n\n## Response\n\n**If failed**:\n```\n⚠️ Try these instead:\n- ${tool1}\n- ${tool2}\n```\n\n**If succeeded**: Silent"
-          }
-        ],
-        "matcher": ".*"
-      }
-    ],
     "SessionStart": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/build-index.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/build-index.sh",
+            "timeout": 30
           }
         ]
       }
     ],
     "UserPromptSubmit": [
       {
+        "matcher": "*",
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Check if user's message indicates they need a specialized tool.\n\n## Detect\n\n- Task keywords: deploy, test, review, debug, build\n- Questions: \"How do I...\", \"Can you help...\"\n- Errors: stack traces, \"not working\"\n\n## Response\n\n**If strong match (>90%)**:\n```\n💡 Using ${toolName}\n\n${continueWithResponse}\n```\n\n**If good match (80-90%)**:\n```\n💡 ${toolName} available\n\n${continueWithResponse}\n```\n\n**Otherwise**: Normal response\n\nRules:\n- Load ~/.claude/tool-advisor-cache.json\n- Skip if cache missing/stale\n- Min confidence: 80%\n- Max one suggestion\n- Be brief and inline"
+            "prompt": "Check if user's message indicates they need a specialized tool or skill.\n\n## Detect Task Keywords\n\n- Action words: deploy, test, review, debug, build, optimize, analyze, spawn agents\n- Questions: \"How do I...\", \"Can you help...\", \"What tools...\"\n- Errors: stack traces, \"not working\", failures\n\n## Check Cache\n\nLoad ~/.claude/tool-advisor-cache.json (skip if missing)\n\n## Response Rules\n\n**If strong match (>90% confidence)**:\nImmediately invoke the matching skill/tool and continue with the task.\n\n**If good match (80-90%)**:\nBriefly mention the available tool: \"💡 ${toolName} available\" then continue.\n\n**Otherwise**: Continue with normal response.\n\n## Cascade Behavior\n\nAfter completing each step, check what logical next action should follow and continue working.\nDon't stop until the user's full intent is satisfied.\n\nBe brief, inline suggestions only. Max one tool suggestion per prompt.",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|Task|Glob|Grep|WebFetch|WebSearch|LSP|NotebookEdit|Skill",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before executing this tool, quickly check if there's a more specialized tool available.\n\n## Quick Check\n\n1. What task is this tool doing?\n2. Check ~/.claude/tool-advisor-cache.json (skip if missing)\n3. Is there a significantly better specialized tool (>85% match)?\n\n## Response\n\n**If better tool exists**:\n💡 Better tool: ${toolName} - ${reason}\n\nSuggest switching but don't block.\n\n**Otherwise**: Silent (let tool proceed)\n\nBe fast - only suggest if significantly better. Don't slow down normal operations.",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|Task|Glob|Grep|WebFetch|WebSearch|LSP|NotebookEdit|Skill|mcp__.*",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "After tool execution, evaluate result and suggest next steps.\n\n## Check Result\n\n1. Did the tool fail? If so, suggest alternatives from cache.\n2. Did it succeed? Determine logical next step.\n\n## Response\n\n**If failed**:\n⚠️ Tool failed. Try alternatives from cache.\nContinue with best alternative.\n\n**If succeeded - cascade to next step**:\nCheck what logical action should follow:\n- File edited → run type-check/tests?\n- Test passed → commit changes?\n- Build succeeded → deploy?\n- Search completed → read relevant files?\n\n➡️ Continue with the next logical step.\n\n**If task complete**: Silent\n\n## Cascade Rule\n\nKeep the workflow moving. After each success, continue to the next logical step without waiting.",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before stopping, verify the task is truly complete.\n\n## Completeness Check\n\n1. Were all requested actions performed?\n2. Did tests pass (if applicable)?\n3. Were any errors left unresolved?\n4. Are there TODO/FIXME markers in recent work?\n\n## Response\n\n**If incomplete**:\nReturn: {\"decision\": \"block\", \"reason\": \"${what_remains}\"}\nContinue working on remaining items.\n\n**If complete**:\nReturn: {\"decision\": \"approve\"}\n\nDon't stop prematurely. Ensure user's full intent is satisfied.",
+            "timeout": 15
           }
         ]
       }
