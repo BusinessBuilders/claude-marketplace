@@ -48,44 +48,56 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 
 # ============================================================================
-# CHECK TRANSCRIPT - Look for incomplete work patterns
+# CHECK TRANSCRIPT - Smart pattern detection (ignore self-references)
 # ============================================================================
 
 if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
-  # Get last ~3000 characters of transcript for recent context
-  LAST_CONTENT=$(tail -c 3000 "$TRANSCRIPT_PATH" 2>/dev/null || echo "")
+  # Get last ~3000 characters, EXCLUDE tool-advisor/hook references (self)
+  LAST_CONTENT=$(tail -c 3000 "$TRANSCRIPT_PATH" 2>/dev/null | grep -viE '(tool-advisor|stop-hook|post-tool-hook|pre-tool-hook|user-prompt-hook|hooks\.json)' || echo "")
 
-  # Check for TODO/FIXME markers indicating incomplete work
-  if echo "$LAST_CONTENT" | grep -qiE '(TODO|FIXME|XXX|HACK|WIP)[:[:space:]]'; then
-    echo '{"decision": "block", "reason": "Incomplete work markers found", "systemMessage": "⛔ INCOMPLETE: Found TODO/FIXME/WIP markers in recent work. Please complete these items before stopping."}'
+  # Skip if nothing left after filtering
+  [[ -z "$LAST_CONTENT" ]] && LAST_CONTENT="empty"
+
+  # Check for TODO/FIXME markers in CODE (not discussion)
+  if echo "$LAST_CONTENT" | grep -qE '^\s*(//|#|/\*|\*)\s*(TODO|FIXME|XXX|HACK|WIP)'; then
+    echo '{"decision": "block", "reason": "Code TODO markers found", "systemMessage": "⚠️ Found TODO/FIXME in code. Complete or acknowledge before stopping."}'
     exit 0
   fi
 
-  # Check for unhandled errors (error mentioned but not fixed/resolved)
-  if echo "$LAST_CONTENT" | grep -qiE '(error|failed|exception|crash)' && \
-     ! echo "$LAST_CONTENT" | grep -qiE '(fixed|resolved|handled|addressed|corrected)'; then
-    echo '{"decision": "block", "reason": "Potential unhandled errors", "systemMessage": "⛔ INCOMPLETE: Recent errors may not be resolved. Verify all issues are addressed before stopping."}'
-    exit 0
+  # Check for ACTUAL errors: stack traces, exit codes, command failures
+  # (not just the word "error" in discussion)
+  if echo "$LAST_CONTENT" | grep -qE '(at\s+\S+:\d+:\d+|Error:|ENOENT|EACCES|exit code [1-9]|Command failed|npm ERR!|SyntaxError:|TypeError:|ReferenceError:)'; then
+    # But allow if we see resolution indicators nearby
+    if ! echo "$LAST_CONTENT" | grep -qiE '(fixed|resolved|✅|succeeded|passed|working now)'; then
+      echo '{"decision": "block", "reason": "Unresolved stack trace or error", "systemMessage": "⚠️ Found actual error (stack trace/exit code). Verify resolved before stopping."}'
+      exit 0
+    fi
   fi
 
-  # Check for "will do later" patterns
-  if echo "$LAST_CONTENT" | grep -qiE '(will.*later|coming.*soon|not.*implemented.*yet|placeholder|stub)'; then
-    echo '{"decision": "block", "reason": "Deferred work detected", "systemMessage": "⛔ INCOMPLETE: Found deferred work (\"will do later\" patterns). Complete or acknowledge these items before stopping."}'
-    exit 0
+  # Check for test failures with actual numbers
+  if echo "$LAST_CONTENT" | grep -qE '[1-9][0-9]*\s+(failed|failing|errors?)'; then
+    if ! echo "$LAST_CONTENT" | grep -qE '(0\s+fail|all.*pass|✅.*test)'; then
+      echo '{"decision": "block", "reason": "Test failures detected", "systemMessage": "⚠️ Test failures detected. Fix failing tests before stopping."}'
+      exit 0
+    fi
   fi
 
-  # Check for test failures
-  if echo "$LAST_CONTENT" | grep -qiE '(\d+\s+fail|\d+\s+error|tests?\s+failed|FAIL)' && \
-     ! echo "$LAST_CONTENT" | grep -qiE '(all.*pass|tests?\s+pass|0\s+fail)'; then
-    echo '{"decision": "block", "reason": "Test failures detected", "systemMessage": "⛔ INCOMPLETE: Test failures were detected. Fix failing tests before stopping."}'
-    exit 0
+  # Check for build failures with actual indicators
+  if echo "$LAST_CONTENT" | grep -qE '(Build failed|Compilation failed|tsc.*error\(s\)|webpack.*error)'; then
+    if ! echo "$LAST_CONTENT" | grep -qE '(Build succeeded|Compiled successfully|✅.*build)'; then
+      echo '{"decision": "block", "reason": "Build failures detected", "systemMessage": "⚠️ Build failed. Fix build errors before stopping."}'
+      exit 0
+    fi
   fi
 
-  # Check for build failures
-  if echo "$LAST_CONTENT" | grep -qiE '(build.*fail|compile.*error|tsc.*error)' && \
-     ! echo "$LAST_CONTENT" | grep -qiE '(build.*success|compile.*success)'; then
-    echo '{"decision": "block", "reason": "Build failures detected", "systemMessage": "⛔ INCOMPLETE: Build failures were detected. Fix build errors before stopping."}'
-    exit 0
+  # RIGHT TOOL CHECK: If there are failures, suggest checking tool-advisor cache
+  if [[ -f "$CACHE_FILE" ]] && echo "$LAST_CONTENT" | grep -qE '(failed|error|not working)'; then
+    # Check if specialized tools might help
+    POTENTIAL_TOOLS=$(jq -r '.capabilities[] | select(.type == "agent") | .id' "$CACHE_FILE" 2>/dev/null | head -3 | tr '\n' ', ')
+    if [[ -n "$POTENTIAL_TOOLS" ]]; then
+      echo "{\"systemMessage\": \"💡 If stuck, specialized agents may help: $POTENTIAL_TOOLS\"}"
+      # Don't block, just suggest
+    fi
   fi
 fi
 
