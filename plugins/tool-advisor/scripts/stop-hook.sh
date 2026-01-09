@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
-# stop-hook.sh - Combined Nudge + Quality Gate Stop Hook
+# stop-hook.sh - Million Dollar Grant Quality Stop Hook
 #
 # Implements the best patterns from research:
 #   1. Quality Gates - Block on unresolved errors, test/build failures
 #   2. Todo Completion - Block if todos are incomplete
 #   3. Smart Nudge - Guide Claude to next logical step
 #   4. User Input Detection - Allow stop when waiting for user
+#   5. QUALITY SELF-CHECK - Force Claude to verify production-grade work
 #
 # Returns decision: approve (allow stop) or block (continue working)
 #
@@ -15,6 +16,7 @@ set -euo pipefail
 
 STATE_FILE="$HOME/.claude/tool-advisor-state.json"
 CACHE_FILE="$HOME/.claude/tool-advisor-cache.json"
+QUALITY_CHECK_FILE="$HOME/.claude/quality-check-done-$$.tmp"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
@@ -25,7 +27,6 @@ TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 # PHASE 1: CHECK FOR INCOMPLETE TODOS (Ralph Wiggum Pattern)
 # ============================================================================
 
-# Check Claude's internal todo list from transcript
 if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
   # Look for recent TodoWrite with incomplete items
   RECENT_TODOS=$(tail -c 10000 "$TRANSCRIPT_PATH" 2>/dev/null | \
@@ -49,6 +50,7 @@ if [[ -f "$STATE_FILE" ]]; then
   FAILURES=$(jq -r ".sessions[\"$SESSION_ID\"].failures // [] | length" "$STATE_FILE" 2>/dev/null || echo "0")
   TOOLS_USED=$(jq -r ".sessions[\"$SESSION_ID\"].tools_used // [] | length" "$STATE_FILE" 2>/dev/null || echo "0")
   STEPS_COMPLETED=$(jq -r ".sessions[\"$SESSION_ID\"].steps_completed // 0" "$STATE_FILE" 2>/dev/null || echo "0")
+  QUALITY_VERIFIED=$(jq -r ".sessions[\"$SESSION_ID\"].quality_verified // false" "$STATE_FILE" 2>/dev/null || echo "false")
 
   # Block if there are unresolved failures
   if [[ "$FAILURES" -gt 0 ]]; then
@@ -89,6 +91,16 @@ if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
       exit 0
     fi
 
+    # QUALITY SELF-CHECK ALREADY DONE: If we see the quality verification in transcript, allow
+    if echo "$LAST_CONTENT" | grep -qiE '(QUALITY VERIFIED|production.grade.*confirmed|million.*dollar.*grade|no placeholders|no hardcoded|all requirements.*met)'; then
+      # Clean up and approve
+      if [[ -f "$STATE_FILE" ]]; then
+        jq "del(.sessions[\"$SESSION_ID\"])" "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null && mv "$STATE_FILE.tmp" "$STATE_FILE"
+      fi
+      echo '{"decision": "approve", "reason": "✅ Quality verified. Production-grade work confirmed."}'
+      exit 0
+    fi
+
     # Check for ACTUAL tool output errors
     if echo "$LAST_CONTENT" | grep -qE '(ENOENT|EACCES|ECONNREFUSED|exit code [1-9]|Command failed|npm ERR!|error TS[0-9]+:)'; then
       if ! echo "$LAST_CONTENT" | grep -qiE '(fixed|resolved|✅|succeeded|working now|no longer)'; then
@@ -112,34 +124,16 @@ if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
         exit 0
       fi
     fi
-
-    # NUDGE PATTERN: If work was done but no verification, suggest next step
-    if echo "$LAST_CONTENT" | grep -qiE '(Edit|Write|created|updated|modified|added|changed)'; then
-      if ! echo "$LAST_CONTENT" | grep -qiE '(test|build|verify|check|confirmed|works|passing)'; then
-        # Non-blocking nudge - just suggest
-        echo '{"systemMessage": "💡 TIP: Consider running tests or build to verify your changes work correctly."}'
-      fi
-    fi
-
-    # STUCK DETECTION: Suggest specialized agents
-    if [[ -f "$CACHE_FILE" ]] && echo "$LAST_CONTENT" | grep -qiE '(stuck|not sure|help|difficult|struggling)'; then
-      POTENTIAL_AGENTS=$(jq -r '.capabilities[] | select(.type == "agent") | .id' "$CACHE_FILE" 2>/dev/null | head -3 | tr '\n' ', ' | sed 's/,$//')
-      if [[ -n "$POTENTIAL_AGENTS" ]]; then
-        echo "{\"systemMessage\": \"💡 Feeling stuck? Try specialized agents: $POTENTIAL_AGENTS\"}"
-      fi
-    fi
   fi
 fi
 
 # ============================================================================
-# PHASE 4: CLEANUP AND APPROVE
+# PHASE 4: MILLION DOLLAR GRANT QUALITY SELF-CHECK
 # ============================================================================
 
-# Clean up session state on approved stop
-if [[ -f "$STATE_FILE" ]]; then
-  jq "del(.sessions[\"$SESSION_ID\"])" "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null && mv "$STATE_FILE.tmp" "$STATE_FILE"
-fi
+# Always require quality verification before stopping
+cat << 'QUALITY_EOF'
+{"decision": "block", "reason": "🏆 QUALITY SELF-CHECK REQUIRED before stopping. Please verify and confirm:\n\n1. ✅ Did I perform EVERYTHING the user requested?\n2. 🚫 Did I add any placeholders (TODO, FIXME, ..., etc.)?\n3. 🚫 Did I hardcode any values that should be configurable?\n4. 🚫 Are there any issues that are NOT production-grade?\n5. 💎 Is this MILLION DOLLAR GRANT grade code?\n\nReview your work carefully. If issues found, fix them. If all checks pass, respond with 'QUALITY VERIFIED: [brief summary of what was done]' to confirm production-grade completion.", "systemMessage": "🔍 Quality self-check required - verify production-grade work"}
+QUALITY_EOF
 
-# All checks passed - allow stop with positive message
-echo '{"decision": "approve", "reason": "✅ Task appears complete. All quality gates passed."}'
 exit 0
