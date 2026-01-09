@@ -48,55 +48,63 @@ if [[ -f "$STATE_FILE" ]]; then
 fi
 
 # ============================================================================
-# CHECK TRANSCRIPT - Smart pattern detection (ignore self-references)
+# CHECK TRANSCRIPT - Smart pattern detection
 # ============================================================================
 
 if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
-  # Get last ~3000 characters, EXCLUDE tool-advisor/hook references (self)
-  LAST_CONTENT=$(tail -c 3000 "$TRANSCRIPT_PATH" 2>/dev/null | grep -viE '(tool-advisor|stop-hook|post-tool-hook|pre-tool-hook|user-prompt-hook|hooks\.json)' || echo "")
+  # Get last ~3000 characters with AGGRESSIVE filtering:
+  # - Remove tool-advisor self-references
+  # - Remove grep/search output (lines with file:line: patterns)
+  # - Remove TodoWrite status lines
+  # - Remove discussion about errors (sentences with "the error", "this error")
+  LAST_CONTENT=$(tail -c 3000 "$TRANSCRIPT_PATH" 2>/dev/null | \
+    grep -viE '(tool-advisor|stop-hook|post-tool-hook|pre-tool-hook|user-prompt-hook|hooks\.json)' | \
+    grep -vE '^[^:]+\.(ts|js|py|sh|json|md):[0-9]+:' | \
+    grep -viE '(\[completed\]|\[in_progress\]|\[pending\])' | \
+    grep -viE '(the error|this error|that error|discussing|talked about|mentioned)' || echo "")
 
-  # Skip if nothing left after filtering
-  [[ -z "$LAST_CONTENT" ]] && LAST_CONTENT="empty"
+  # Skip checks if nothing meaningful left
+  [[ -z "$LAST_CONTENT" || "$LAST_CONTENT" == "empty" ]] && LAST_CONTENT=""
 
-  # Check for TODO/FIXME markers in CODE (not discussion)
-  if echo "$LAST_CONTENT" | grep -qE '^\s*(//|#|/\*|\*)\s*(TODO|FIXME|XXX|HACK|WIP)'; then
-    echo '{"decision": "block", "reason": "Code TODO markers found", "systemMessage": "⚠️ Found TODO/FIXME in code. Complete or acknowledge before stopping."}'
+  if [[ -n "$LAST_CONTENT" ]]; then
+    # Check for ACTUAL tool output errors (not discussions)
+    # Only match errors that look like real tool failures
+    if echo "$LAST_CONTENT" | grep -qE '(ENOENT|EACCES|ECONNREFUSED|exit code [1-9]|Command failed|npm ERR!|error TS[0-9]+:)'; then
+      # But allow if we see resolution indicators
+      if ! echo "$LAST_CONTENT" | grep -qiE '(fixed|resolved|✅|succeeded|working now|no longer)'; then
+        echo '{"decision": "block", "reason": "Unresolved tool error", "systemMessage": "⚠️ Tool error detected. Address or acknowledge before stopping."}'
+        exit 0
+      fi
+    fi
+
+    # Check for test failures - only actual test runner output
+    if echo "$LAST_CONTENT" | grep -qE '(FAIL\s+[a-zA-Z]|Tests:\s+[0-9]+\s+failed|[0-9]+\s+failing)'; then
+      if ! echo "$LAST_CONTENT" | grep -qE '(PASS|Tests:\s+[0-9]+\s+passed|all passing)'; then
+        echo '{"decision": "block", "reason": "Test failures in output", "systemMessage": "⚠️ Test failures detected. Fix or acknowledge before stopping."}'
+        exit 0
+      fi
+    fi
+
+    # Check for build failures - only actual build output
+    if echo "$LAST_CONTENT" | grep -qE '(error TS[0-9]+:|Build failed|Compilation failed|ERROR in)'; then
+      if ! echo "$LAST_CONTENT" | grep -qE '(Build succeeded|Compiled successfully|webpack.*compiled)'; then
+        echo '{"decision": "block", "reason": "Build failure in output", "systemMessage": "⚠️ Build failed. Fix or acknowledge before stopping."}'
+        exit 0
+      fi
+    fi
+  fi
+
+  # USER INPUT CHECK: If asking for clarification, allow stop
+  if echo "$LAST_CONTENT" | grep -qiE '(which.*prefer|what.*should|need.*clarification|waiting.*input|your.*decision|please.*choose|would you like)'; then
+    echo '{"decision": "approve", "reason": "Waiting for user input"}'
     exit 0
   fi
 
-  # Check for ACTUAL errors: stack traces, exit codes, command failures
-  # (not just the word "error" in discussion)
-  if echo "$LAST_CONTENT" | grep -qE '(at\s+\S+:\d+:\d+|Error:|ENOENT|EACCES|exit code [1-9]|Command failed|npm ERR!|SyntaxError:|TypeError:|ReferenceError:)'; then
-    # But allow if we see resolution indicators nearby
-    if ! echo "$LAST_CONTENT" | grep -qiE '(fixed|resolved|✅|succeeded|passed|working now)'; then
-      echo '{"decision": "block", "reason": "Unresolved stack trace or error", "systemMessage": "⚠️ Found actual error (stack trace/exit code). Verify resolved before stopping."}'
-      exit 0
-    fi
-  fi
-
-  # Check for test failures with actual numbers
-  if echo "$LAST_CONTENT" | grep -qE '[1-9][0-9]*\s+(failed|failing|errors?)'; then
-    if ! echo "$LAST_CONTENT" | grep -qE '(0\s+fail|all.*pass|✅.*test)'; then
-      echo '{"decision": "block", "reason": "Test failures detected", "systemMessage": "⚠️ Test failures detected. Fix failing tests before stopping."}'
-      exit 0
-    fi
-  fi
-
-  # Check for build failures with actual indicators
-  if echo "$LAST_CONTENT" | grep -qE '(Build failed|Compilation failed|tsc.*error\(s\)|webpack.*error)'; then
-    if ! echo "$LAST_CONTENT" | grep -qE '(Build succeeded|Compiled successfully|✅.*build)'; then
-      echo '{"decision": "block", "reason": "Build failures detected", "systemMessage": "⚠️ Build failed. Fix build errors before stopping."}'
-      exit 0
-    fi
-  fi
-
-  # RIGHT TOOL CHECK: If there are failures, suggest checking tool-advisor cache
-  if [[ -f "$CACHE_FILE" ]] && echo "$LAST_CONTENT" | grep -qE '(failed|error|not working)'; then
-    # Check if specialized tools might help
+  # RIGHT TOOL SUGGESTION (non-blocking)
+  if [[ -f "$CACHE_FILE" ]] && echo "$LAST_CONTENT" | grep -qiE '(stuck|not sure|help)'; then
     POTENTIAL_TOOLS=$(jq -r '.capabilities[] | select(.type == "agent") | .id' "$CACHE_FILE" 2>/dev/null | head -3 | tr '\n' ', ')
     if [[ -n "$POTENTIAL_TOOLS" ]]; then
-      echo "{\"systemMessage\": \"💡 If stuck, specialized agents may help: $POTENTIAL_TOOLS\"}"
-      # Don't block, just suggest
+      echo "{\"systemMessage\": \"💡 Specialized agents available: $POTENTIAL_TOOLS\"}"
     fi
   fi
 fi
