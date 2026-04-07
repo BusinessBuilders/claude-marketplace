@@ -18,18 +18,13 @@ STATE_FILE="$HOME/.claude/tool-advisor-state.json"
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
-TOOL_RESULT=$(echo "$INPUT" | jq -r '.tool_response // .tool_result // empty' 2>/dev/null || echo "")
+TOOL_RESULT=$(echo "$INPUT" | jq -r '.tool_result // empty' 2>/dev/null || echo "")
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
 
 [[ -z "$TOOL_RESULT" ]] && exit 0
 
 # Initialize state file if needed
 [[ ! -f "$STATE_FILE" ]] && echo '{"sessions":{}}' > "$STATE_FILE"
-
-# Always track tool use regardless of success/failure
-jq --arg sid "$SESSION_ID" --arg tool "$TOOL_NAME" \
-   '.sessions[$sid] = (.sessions[$sid] // {failures:[], tools_used:[], steps_completed:0}) | .sessions[$sid].tools_used += [$tool] | .sessions[$sid].steps_completed += 1' \
-   "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
 # ============================================================================
 # FAILURE DETECTION - Check for errors and suggest alternatives
@@ -101,6 +96,11 @@ fi
 # ============================================================================
 # SUCCESS - Track and CASCADE to next logical step
 # ============================================================================
+
+# Track successful tool use
+jq --arg sid "$SESSION_ID" --arg tool "$TOOL_NAME" \
+   '.sessions[$sid] = (.sessions[$sid] // {failures:[], tools_used:[], steps_completed:0}) | .sessions[$sid].tools_used += [$tool] | .sessions[$sid].steps_completed += 1' \
+   "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null && mv "$STATE_FILE.tmp" "$STATE_FILE"
 
 # Clear failures on success (they were resolved)
 jq --arg sid "$SESSION_ID" \
