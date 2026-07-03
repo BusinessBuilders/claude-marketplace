@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 160" width="1200" height="160">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&amp;family=Funnel+Display:wght@300..800&amp;display=swap');
+    text{font-family:'Bricolage Grotesque','Inter',system-ui,sans-serif;}
+  </style>
+  <rect width="1200" height="160" fill="hsl(0 0% 4%)"/>
+  <rect x="10" y="10" width="1180" height="140" rx="14" fill="hsl(30 9% 12.5%)" stroke="hsl(38 60% 92% / .12)"/>
+
+  <!-- badge 1: print on demand (box) -->
+  <g transform="translate(150,66)" stroke="hsl(20 75% 62%)" stroke-width="3" fill="none" stroke-linejoin="round">
+    <path d="M-22 -8 L0 -20 L22 -8 L22 14 L0 26 L-22 14 Z" fill="hsl(18 40% 13%)"/>
+    <path d="M-22 -8 L0 4 L22 -8 M0 4 L0 26"/>
+  </g>
+  <text x="220" y="72" font-size="17" font-weight="700" fill="hsl(38 75% 97%)">Printed on demand</text>
+  <text x="220" y="98" font-size="14" fill="hsl(35 12% 64%)">Made when you order</text>
+
+  <!-- divider -->
+  <line x1="420" y1="40" x2="420" y2="120" stroke="hsl(38 60% 92% / .12)" stroke-width="2"/>
+
+  <!-- badge 2: secure checkout (lock + check) -->
+  <g transform="translate(510,66)" stroke="hsl(196 52% 56%)" stroke-width="3" fill="none" stroke-linecap="round">
+    <rect x="-18" y="-4" width="36" height="28" rx="5" fill="hsl(196 45% 14%)"/>
+    <path d="M-10 -4 v-9 a10 10 0 0 1 20 0 v9"/>
+    <path d="M-7 10 l5 6 l10 -12" stroke-width="3.4"/>
+  </g>
+  <text x="580" y="72" font-size="17" font-weight="700" fill="hsl(38 75% 97%)">Secure checkout</text>
+  <text x="580" y="98" font-size="14" fill="hsl(35 12% 64%)">Card, wallet, or Shop Pay</text>
+
+  <!-- divider -->
+  <line x1="790" y1="40" x2="790" y2="120" stroke="hsl(38 60% 92% / .12)" stroke-width="2"/>
+
+  <!-- badge 3: open source forever (star) -->
+  <g transform="translate(880,66)">
+    <circle r="26" fill="hsl(38 30% 13%)" stroke="hsl(38 72% 78%)" stroke-width="3"/>
+    <path d="M0,-13 L3.8,-4.7 13,-3.7 6.2,2.6 8.1,11.7 0,7 -8.1,11.7 -6.2,2.6 -13,-3.7 -3.8,-4.7 Z" fill="hsl(38 72% 78%)"/>
+  </g>
+  <text x="950" y="72" font-size="17" font-weight="700" fill="hsl(38 75% 97%)">Open source forever</text>
+  <text x="950" y="98" font-size="14" fill="hsl(35 12% 64%)">Your merch funds open work</text>
+</svg>
