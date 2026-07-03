@@ -16,24 +16,51 @@ set -euo pipefail
 
 STATE_FILE="$HOME/.claude/tool-advisor-state.json"
 CACHE_FILE="$HOME/.claude/tool-advisor-cache.json"
-QUALITY_CHECK_FILE="$HOME/.claude/quality-check-done-$$.tmp"
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"' 2>/dev/null)
 STOP_REASON=$(echo "$INPUT" | jq -r '.stop_reason // empty' 2>/dev/null)
 TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
+STOP_HOOK_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null)
+
+# ============================================================================
+# PHASE 0: LOOP PROTECTION + EARLY QUALITY-VERIFIED CHECK (on RAW transcript)
+# ============================================================================
+
+# The QUALITY VERIFIED sentinel must be checked on UNFILTERED content: the
+# Phase-3 filter strips lines mentioning "stop-hook"/"tool-advisor", so a reply
+# like "QUALITY VERIFIED — audited the stop-hook" would never approve otherwise.
+if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
+  if tail -c 3000 "$TRANSCRIPT_PATH" 2>/dev/null | grep -qiE 'QUALITY VERIFIED'; then
+    if [[ -f "$STATE_FILE" ]]; then
+      jq "del(.sessions[\"$SESSION_ID\"])" "$STATE_FILE" > "$STATE_FILE.tmp" 2>/dev/null && mv "$STATE_FILE.tmp" "$STATE_FILE"
+    fi
+    echo '{"decision": "approve", "reason": "✅ Quality verified."}'
+    exit 0
+  fi
+fi
+
+# stop_hook_active means this hook already blocked once this stop attempt.
+# Blocking again with no new signal = infinite loop. Allow the stop.
+if [[ "$STOP_HOOK_ACTIVE" == "true" ]]; then
+  echo '{"decision": "approve", "reason": "Loop protection: stop hook already ran once for this stop; not blocking again."}'
+  exit 0
+fi
 
 # ============================================================================
 # PHASE 1: CHECK FOR INCOMPLETE TODOS (Ralph Wiggum Pattern)
 # ============================================================================
 
 if [[ -n "$TRANSCRIPT_PATH" && -f "$TRANSCRIPT_PATH" ]]; then
-  # Look for recent TodoWrite with incomplete items
+  # Look for recent TodoWrite with incomplete items.
+  # NOTE: `{ grep || true; }` keeps pipefail from failing the pipeline on zero
+  # matches — the old `| wc -l || echo 0` form produced "0\n0" (wc's output PLUS
+  # the fallback), which broke every -gt comparison below.
   RECENT_TODOS=$(tail -c 10000 "$TRANSCRIPT_PATH" 2>/dev/null | \
-    grep -oE '"status"\s*:\s*"(in_progress|pending)"' | wc -l || echo "0")
+    { grep -oE '"status"\s*:\s*"(in_progress|pending)"' || true; } | wc -l)
 
   COMPLETED_TODOS=$(tail -c 10000 "$TRANSCRIPT_PATH" 2>/dev/null | \
-    grep -oE '"status"\s*:\s*"completed"' | wc -l || echo "0")
+    { grep -oE '"status"\s*:\s*"completed"' || true; } | wc -l)
 
   # If there are pending/in_progress todos and not many completed, nudge to continue
   if [[ "$RECENT_TODOS" -gt 0 && "$COMPLETED_TODOS" -lt "$RECENT_TODOS" ]]; then
@@ -58,7 +85,9 @@ if [[ -f "$STATE_FILE" ]]; then
     FAIL_TOOL=$(echo "$LAST_FAILURE" | jq -r '.tool // "unknown"')
     FAIL_TYPE=$(echo "$LAST_FAILURE" | jq -r '.type // "unknown"')
 
-    echo "{\"decision\": \"block\", \"reason\": \"⚠️ Unresolved $FAIL_TYPE error from $FAIL_TOOL. Either fix the issue, try an alternative approach, or explicitly acknowledge why it cannot be resolved.\", \"systemMessage\": \"⛔ Unresolved error - address before stopping\"}"
+    # jq -n builds the JSON so tool/type values with quotes can't break the output
+    jq -cn --arg tool "$FAIL_TOOL" --arg type "$FAIL_TYPE" \
+      '{decision: "block", reason: ("⚠️ Unresolved \($type) error from \($tool). Either fix the issue, try an alternative approach, or explicitly acknowledge why it cannot be resolved."), systemMessage: "⛔ Unresolved error - address before stopping"}'
     exit 0
   fi
 
